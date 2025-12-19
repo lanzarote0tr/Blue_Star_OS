@@ -8,6 +8,15 @@
 
 [Sources]
   main.c
+  gdt.c
+  idt.c
+  ioport.c
+  multitask.c
+  pic.c
+  pit.c
+  uefiutil.c
+  gui.c
+  heap.c
 
 [Packages]
   MdePkg/MdePkg.dec
