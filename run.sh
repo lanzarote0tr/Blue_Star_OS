@@ -1,3 +1,4 @@
+set -e
 . edksetup.sh
 build --platform=OvmfPkg/OvmfPkgX64.dsc --arch=X64 --buildtarget=RELEASE --tagname=GCC5
 
