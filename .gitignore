@@ -2,3 +2,12 @@
 *.fd
 *.dd
 *.o
+Build/
+.DS_Store
+*_extdep/
+*.pyc
+__pycache__/
+tags/
+.vscode/
+.venv/
+Conf/
