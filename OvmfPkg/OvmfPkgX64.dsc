@@ -770,7 +770,7 @@
 #
 ################################################################################
 [Components]
-  BlueStarOS/info.inf
+  BlueStarOS/BOOTX64.EFI/info.inf
   OvmfPkg/ResetVector/ResetVector.inf
 
   #

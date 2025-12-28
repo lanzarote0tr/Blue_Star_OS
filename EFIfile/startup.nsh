@@ -1,1 +1,3 @@
-fs0:\os.efi
+fs0:
+BOOTX64.EFI
+
