@@ -1,8 +1,9 @@
 #include "gui.h"
+#include "heap.h"
 #include <emmintrin.h>
 
 uint32_t *fb;
-uint32_t double_fb[2560 * 1440 * 2];
+uint32_t *double_fb;
 uint64_t width;
 uint64_t height;
 
@@ -12,6 +13,10 @@ void init_gui(boot_info_t* bootinfo)
     fb = bootinfo->framebuffer_base;
     width = bootinfo->framebuffer_width;
     height = bootinfo->framebuffer_height;
+
+    double_fb = malloc(width * height * 5);
+
+    for (int i = 0; i < width * height * 5; i++) double_fb[i] = 0;
 
 }
 

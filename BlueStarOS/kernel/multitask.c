@@ -9,7 +9,6 @@
 
 
 task_t tasks[MAX_TASKS];
-uint8_t task_stack[MAX_TASKS][TASK_STACK_SIZE + 99];
 
 int current_task = 0;
 int task_count = 0;
@@ -20,7 +19,7 @@ void task_add(void (*entry)(void), int id, int cs, int ds)
 {
     task_t *t = &tasks[task_count];
 
-    t->stack_mem = task_stack[task_count];
+    t->stack_mem = malloc(TASK_STACK_SIZE);
 
     task_count++;
     if (!t->stack_mem)
