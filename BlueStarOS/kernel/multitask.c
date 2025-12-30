@@ -4,12 +4,12 @@
 #include "asmtools.h"
 #include "gui.h"
 
-#define MAX_TASKS 200
-#define TASK_STACK_SIZE 4 * 4096
+#define MAX_TASKS 20
+#define TASK_STACK_SIZE 4096
 
 
 task_t tasks[MAX_TASKS];
-bool using[MAX_TASKS];
+uint8_t task_stack[MAX_TASKS][TASK_STACK_SIZE + 99];
 
 int current_task = 0;
 int task_count = 0;
@@ -20,7 +20,8 @@ void task_add(void (*entry)(void), int id, int cs, int ds)
 {
     task_t *t = &tasks[task_count];
 
-    t->stack_mem = malloc(TASK_STACK_SIZE + 99);
+    t->stack_mem = task_stack[task_count];
+
     task_count++;
     if (!t->stack_mem)
     {

@@ -1,7 +1,8 @@
 #ifndef GUI_H
 #define GUI_H
 
-#include <Library/UefiLib.h>
+#include "../bootinfo.h"
+#include <stdint.h>
 
 void init_gui(boot_info_t* bootinfo);
 

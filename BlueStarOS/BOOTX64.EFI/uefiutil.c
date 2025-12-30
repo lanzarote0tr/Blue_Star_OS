@@ -109,68 +109,138 @@ EFI_GRAPHICS_OUTPUT_PROTOCOL* EFIAPI init_gui()
     return Gop;
 }
 
-VOID EFIAPI load_os(VOID)
+EFI_STATUS EFIAPI load_os(VOID)
 {
     EFI_STATUS Status;
-
-    EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *fs;
-    EFI_FILE_PROTOCOL *root, *kernel;
-
-    Status = gBS->LocateProtocol(
-        &gEfiSimpleFileSystemProtocolGuid,
-        NULL,
-        (VOID **)&fs
-    );
-    if (EFI_ERROR(Status)) return;
-
-    Status = fs->OpenVolume(fs, &root);
-    if (EFI_ERROR(Status)) return;
-
-    Status = root->Open(
-        root,
-        &kernel,
-        L"kernel",
-        EFI_FILE_MODE_READ,
-        0
-    );
-    if (EFI_ERROR(Status)) {
-        Print(L"No such file.");
-    }
-
-    // --- 파일 정보 얻기 ---
-    EFI_FILE_INFO *info;
+    EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *fs = NULL;
+    EFI_FILE_PROTOCOL *root = NULL;
+    EFI_FILE_PROTOCOL *kernel = NULL;
+    EFI_FILE_INFO *info = NULL;
     UINTN info_size = 0;
 
-    // 1차 호출: size만 얻기
-    kernel->GetInfo(kernel, &gEfiFileInfoGuid, &info_size, NULL);
+    // 1. 파일 시스템 프로토콜 가져오기
+    Status = gBS->LocateProtocol(&gEfiSimpleFileSystemProtocolGuid, NULL, (VOID**)&fs);
+    if (EFI_ERROR(Status)) {
+        Print(L"LocateProtocol failed: %r\n", Status);
+        return Status;
+    }
 
-    // size만큼 재할당
-    gBS->AllocatePool(EfiLoaderData, info_size, (VOID **)&info);
+    // 2. ESP 루트 열기
+    Status = fs->OpenVolume(fs, &root);
+    if (EFI_ERROR(Status)) {
+        Print(L"OpenVolume failed: %r\n", Status);
+        return Status;
+    }
 
-    // 2차 호출: 실제 정보 받기
-    kernel->GetInfo(kernel, &gEfiFileInfoGuid, &info_size, info);
+    // 3. kernel 파일 위치 후보
+    CHAR16 *candidates[] = {
+        L"\\kernel",
+        L"\\EFI\\BOOT\\KERNEL",
+    };
 
-    UINTN kernel_size = info->FileSize;
+    UINTN i;
+    for (i = 0; i < sizeof(candidates)/sizeof(candidates[0]); i++) {
+        Status = root->Open(root, &kernel, candidates[i], EFI_FILE_MODE_READ, 0);
+        if (!EFI_ERROR(Status)) break; // 성공하면 루프 종료
+    }
 
-    // --- 커널 로드할 물리 주소 ---
-    EFI_PHYSICAL_ADDRESS kernel_phys = KERNEL_LOAD_ADDRESS;
+    if (EFI_ERROR(Status) || kernel == NULL) {
+        Print(L"No such file in any known location.\n");
+        if (root) root->Close(root);
+        return EFI_NOT_FOUND;
+    }
 
-    Status = gBS->AllocatePages(
-        AllocateAddress,
-        EfiLoaderData,
-        EFI_SIZE_TO_PAGES(kernel_size),
-        &kernel_phys
-    );
-    if (EFI_ERROR(Status)) return;
+    Print(L"Kernel found at: %s\n", candidates[i]);
 
-    // --- 파일 읽기 ---
-    Status = kernel->Read(
-        kernel,
-        &kernel_size,
-        (VOID *)(UINTN)kernel_phys
-    );
-    if (EFI_ERROR(Status)) return;
+    // --- 파일 정보(크기) 얻기: 먼저 크기 질의 ---
+    info_size = 0;
+    Status = kernel->GetInfo(kernel, &gEfiFileInfoGuid, &info_size, NULL);
+    if (Status != EFI_BUFFER_TOO_SMALL) {
+        Print(L"GetInfo (size query) failed: %r\n", Status);
+        kernel->Close(kernel);
+        root->Close(root);
+        return Status;
+    }
 
-    // 여기까지:
-    // kernel.elf 가 물리주소 0x200000에 그대로 로드됨
+    Status = gBS->AllocatePool(EfiLoaderData, info_size, (VOID**)&info);
+    if (EFI_ERROR(Status)) {
+        Print(L"AllocatePool for FileInfo failed: %r\n", Status);
+        kernel->Close(kernel);
+        root->Close(root);
+        return Status;
+    }
+
+    Status = kernel->GetInfo(kernel, &gEfiFileInfoGuid, &info_size, info);
+    if (EFI_ERROR(Status)) {
+        Print(L"GetInfo (read) failed: %r\n", Status);
+        gBS->FreePool(info);
+        kernel->Close(kernel);
+        root->Close(root);
+        return Status;
+    }
+
+    UINTN kernel_size = (UINTN)info->FileSize;
+    if (kernel_size == 0) {
+        Print(L"Kernel file size is 0\n");
+        gBS->FreePool(info);
+        kernel->Close(kernel);
+        root->Close(root);
+        return EFI_INVALID_PARAMETER;
+    }
+
+    // --- 페이지 수 계산 및 메모리 할당 ---
+    UINTN pages = EFI_SIZE_TO_PAGES(kernel_size);
+    EFI_PHYSICAL_ADDRESS kernel_phys = 0;
+
+    // (옵션) 고정 주소에 로드하려면 아래처럼 시도할 수 있지만 실패할 가능성이 있으므로
+    // 먼저 고정 주소를 시도해보고 실패하면 AnyPages로 대체하는 방식으로 작성함.
+#ifdef KERNEL_LOAD_ADDR
+    kernel_phys = (EFI_PHYSICAL_ADDRESS)KERNEL_LOAD_ADDR;
+    Status = gBS->AllocatePages(AllocateAddress, EfiLoaderData, pages, &kernel_phys);
+    if (EFI_ERROR(Status)) {
+        // 고정주소 할당 실패하면 아무 주소에나 할당
+        kernel_phys = 0;
+        Status = gBS->AllocatePages(AllocateAnyPages, EfiLoaderData, pages, &kernel_phys);
+    }
+#else
+    Status = gBS->AllocatePages(AllocateAnyPages, EfiLoaderData, pages, &kernel_phys);
+#endif
+    if (EFI_ERROR(Status)) {
+        Print(L"AllocatePages failed: %r\n", Status);
+        gBS->FreePool(info);
+        kernel->Close(kernel);
+        root->Close(root);
+        return Status;
+    }
+
+    // --- 파일 포인터를 파일 시작으로 맞춘 뒤 읽기 ---
+    Status = kernel->SetPosition(kernel, 0);
+    if (EFI_ERROR(Status)) {
+        Print(L"SetPosition failed: %r\n", Status);
+        gBS->FreePages(kernel_phys, pages);
+        gBS->FreePool(info);
+        kernel->Close(kernel);
+        root->Close(root);
+        return Status;
+    }
+
+    UINTN bytes_to_read = kernel_size;
+    Status = kernel->Read(kernel, &bytes_to_read, (VOID*)(UINTN)kernel_phys);
+    if (EFI_ERROR(Status) || bytes_to_read != kernel_size) {
+        Print(L"Read failed: %r, read %u/%u\n", Status, bytes_to_read, kernel_size);
+        gBS->FreePages(kernel_phys, pages);
+        gBS->FreePool(info);
+        kernel->Close(kernel);
+        root->Close(root);
+        return EFI_LOAD_ERROR;
+    }
+
+    Print(L"Kernel loaded to physical address %p, size %u bytes\n", (VOID*)(UINTN)kernel_phys, kernel_size);
+
+    // 정리
+    gBS->FreePool(info);
+    kernel->Close(kernel);
+    root->Close(root);
+
+    return EFI_SUCCESS;
 }

@@ -13,4 +13,9 @@ ensure_base_tools
 . edksetup.sh
 build --platform=OvmfPkg/OvmfPkgX64.dsc --arch=X64 --buildtarget=RELEASE --tagname=GCC5
 
+cd BlueStarOS/kernel
+make
+cd ../..
+
 cp Build/OvmfX64/RELEASE_GCC5/X64/BOOTX64.efi EFIfile/BOOTX64.efi
+cp BlueStarOS/kernel/build/kernel EFIfile/kernel

@@ -1,11 +1,8 @@
-#include <Uefi.h>
-#include <Library/UefiLib.h>
-#include <Library/UefiBootServicesTableLib.h>
-#include <stdint.h>
-#include "bootinfo.h"
+#include "gui.h"
+#include <emmintrin.h>
 
 uint32_t *fb;
-uint32_t double_fb[5000000];
+uint32_t double_fb[2560 * 1440 * 2];
 uint64_t width;
 uint64_t height;
 
@@ -20,8 +17,33 @@ void init_gui(boot_info_t* bootinfo)
 
 void gui_update()
 {
-    for (int i = 0; i < width * height; i++)
-        fb[i] = double_fb[i];
+    uint32_t *src = double_fb;
+    uint32_t *dst = fb;
+
+    size_t scanline = width;  // 한 줄 픽셀 수
+    size_t y;
+
+    for (y = 0; y < height; y++)
+    {
+        size_t x = 0;
+        size_t base = y * scanline;
+
+        // 4픽셀씩 SSE2로 복사, 루프 언롤링 2회분
+        for (; x + 7 < scanline; x += 8)
+        {
+            __m128i d1 = _mm_load_si128((__m128i*)&src[base + x]);
+            __m128i d2 = _mm_load_si128((__m128i*)&src[base + x + 4]);
+
+            _mm_store_si128((__m128i*)&dst[base + x], d1);
+            _mm_store_si128((__m128i*)&dst[base + x + 4], d2);
+        }
+
+        // 남은 픽셀 처리
+        for (; x < scanline; x++)
+        {
+            dst[base + x] = src[base + x];
+        }
+    }
 }
 
 void draw_pixel_alpha(
@@ -70,13 +92,34 @@ void draw_pixel(
         (blue);
 }
 
-void draw_rectangle(int x, int y, int width, int height, uint8_t red, uint8_t green, uint8_t blue)
+// assuming 32-bit pixel format: 0x00RRGGBB
+static inline uint32_t make_pixel(uint8_t r, uint8_t g, uint8_t b)
 {
-    for (int i = x; i < (x + width); i++)
+    return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+}
+
+void draw_rectangle(int x, int y, int rect_width, int rect_height, uint8_t red, uint8_t green, uint8_t blue)
+{
+    uint32_t color = make_pixel(red, green, blue);
+    __m128i color128 = _mm_set1_epi32(color); // 4픽셀용
+    __m128i color128_2 = color128;            // 루프 언롤링 두 번째 블록용
+
+    for (int j = y; j < y + rect_height; j++)
     {
-        for (int j = y; j < (y + height); j++)
+        uint32_t *row = &double_fb[j * width + x];
+        int i = 0;
+
+        // 8픽셀 단위 루프 언롤링 (4픽셀씩 2번)
+        for (; i + 7 < rect_width; i += 8)
         {
-            draw_pixel(i, j, red, green, blue);
+            _mm_storeu_si128((__m128i*)&row[i], color128);       // 4픽셀
+            _mm_storeu_si128((__m128i*)&row[i + 4], color128_2); // 다음 4픽셀
+        }
+
+        // 남은 픽셀 처리
+        for (; i < rect_width; i++)
+        {
+            row[i] = color;
         }
     }
 }

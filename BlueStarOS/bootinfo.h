@@ -1,9 +1,10 @@
 #ifndef BOOTINFO_H
 #define BOOTINFO_H
 
+#define KERNEL_LOAD_ADDR 0x200000
+#define BOOT_INFO_ADDR 0x180000
+
 #include <stdint.h>
-#define BOOT_INFO_ADDRESS 0x180000
-#define KERNEL_LOAD_ADDRESS 0x200000
 
 typedef struct {
     uint64_t framebuffer_base;

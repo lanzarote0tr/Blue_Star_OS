@@ -10,16 +10,12 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syste
 
     load_os();
 
-    boot_info_t* bootinfo = (boot_info_t*)BOOT_INFO_ADDRESS;
-
-    /*
+    boot_info_t *bootinfo = BOOT_INFO_ADDR;
 
     EFI_GRAPHICS_OUTPUT_PROTOCOL* gop = init_gui();
     bootinfo->framebuffer_base = gop->Mode->FrameBufferBase;
     bootinfo->framebuffer_height = gop->Mode->Info->VerticalResolution;
     bootinfo->framebuffer_width = gop->Mode->Info->HorizontalResolution;
-
-    */
 
     EFI_STATUS Status;
 
@@ -31,12 +27,12 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *Syste
     }
 
     __asm__ volatile (
-        "mov %0, %%rdi\n"   // SysV ABI: 첫 인자
-        "jmp *%1\n"         // return 없이 점프
-        :
-        : "r"((uint64_t)BOOT_INFO_ADDRESS), "r"((uint64_t)KERNEL_LOAD_ADDRESS)
-        : "rdi", "memory"
+        "mov $0x170000, %rax\n"
+        "mov %rax, %rsp\n"
+        "mov %rax, %rbp\n"
     );
+
+    ((void(*)())KERNEL_LOAD_ADDR)(bootinfo);
 
     for(;;) asm("hlt");
 }
