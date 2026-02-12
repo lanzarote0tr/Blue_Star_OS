@@ -1,9 +1,7 @@
 #include <stdint.h>
-#include <stdbool.h>
 #include "gdt.h"
 #include "idt.h"
 #include "pic.h"
-#include "ioport.h"
 #include "multitask.h"
 #include "pit.h"
 #include "gui.h"
@@ -12,22 +10,30 @@
 #include "../bootinfo.h"
 
 #define IRQ0_VECTOR 0x20 /* after PIC remap */
-#define NULL (void*)0
+#define COLOR_MIN 0
+#define COLOR_MAX 255
 
-#define KB  (1024ULL)
-#define MB  (1024ULL * KB)
-#define GB  (1024ULL * MB)
+static void halt_forever(void)
+{
+    for (;;) {
+        __asm__ volatile("hlt");
+    }
+}
+
+static void fill_screen_red(uint8_t value)
+{
+    draw_rectangle(0, 0, (int)gui_width(), (int)gui_height(), value, 0, 0);
+}
 
 void task_func_a(void)
 {
-    while (1)
-    {
-        for (int k = 0; k < 256; k++) {
-            draw_rectangle(0, 0, 200, 200, k, 0, 0);
+    while (1) {
+        for (int k = COLOR_MIN; k <= COLOR_MAX; k++) {
+            fill_screen_red((uint8_t)k);
             gui_update();
         }
-        for (int k = 255; k >= 0; k--) {
-            draw_rectangle(0, 0, 200, 200, k, 0, 0);
+        for (int k = COLOR_MAX; k >= COLOR_MIN; k--) {
+            fill_screen_red((uint8_t)k);
             gui_update();
         }
     }
@@ -35,21 +41,30 @@ void task_func_a(void)
 
 void task_func_b(void)
 {
-    while (1)
-    {
-        for (int k = 0; k < 256; k++) {
-            draw_rectangle(200, 200, 200, 200, 0, k, 0);
+    while (1) {
+        for (int k = COLOR_MIN; k <= COLOR_MAX; k++) {
+            draw_rectangle(200, 200, 200, 200, 0, (uint8_t)k, 0);
             gui_update();
         }
-        for (int k = 255; k >= 0; k--){
-            draw_rectangle(200, 200, 200, 200, 0, k, 0);
+        for (int k = COLOR_MAX; k >= COLOR_MIN; k--) {
+            draw_rectangle(200, 200, 200, 200, 0, (uint8_t)k, 0);
             gui_update();
         }
     }
 }
 
 __attribute__((section(".entry")))
-void main(boot_info_t* bootinfo){
+void main(boot_info_t *bootinfo)
+{
+    __asm__ volatile("cli");
+
+    if (bootinfo == 0) {
+        halt_forever();
+    }
+
+    if (!heap_init((void *)(uintptr_t)bootinfo->heap_base, (size_t)bootinfo->heap_size)) {
+        halt_forever();
+    }
 
     init_gui(bootinfo);
 
@@ -58,16 +73,13 @@ void main(boot_info_t* bootinfo){
     install_gdt();
     load_idt();
 
-    pic_remap(0x20, 0x28);
-    pic_irq_unmask(0);
-    
-    task_add(task_func_a, 0, KERNEL_CS, KERNEL_DS);
-    task_add(task_func_b, 1, KERNEL_CS, KERNEL_DS);
-
     set_idt_entry(IRQ0_VECTOR, irq0_task_switch, 0, 0x8E, KERNEL_CS);
+    pic_remap(0x20, 0x28);
     pit_set_frequency(50);
+    pic_irq_unmask(0);
 
-    // Switch to first task by setting RSP to its saved area and iretq
+    task_add(task_func_a, 0, USER_CS, USER_DS);
+    // task_add(task_func_b, 1, USER_CS, USER_DS);
 
     multitask_start();
 }

@@ -10,7 +10,6 @@
   uefimain.c
   uefiutil.c
 
-
 [Packages]
   MdePkg/MdePkg.dec
 

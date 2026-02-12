@@ -1,3 +1,7 @@
+#ifndef ASMTOOLS_H
+#define ASMTOOLS_H
+
+/* Save/restore common GPRs in the order expected by saved_regs_t */
 #define PUSHAQ() \
     __asm__ volatile( \
         "pushq %%rax\n\t" \
@@ -40,9 +44,12 @@
 
 #define IRETQ() __asm__ volatile("iretq\n\t" ::: "memory")
 
+/* Send EOI to PIC master (IRQ0 path in this kernel) */
 #define SEND_EOI() \
     __asm__ volatile( \
         "movb $0x20, %%al\n\t" \
         "outb %%al, $0x20\n\t" \
         ::: "memory" \
     )
+
+#endif

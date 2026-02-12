@@ -1,11 +1,12 @@
 #include "paging.h"
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
-__attribute__((aligned(4096))) uint64_t pml4[512] = {0, };
-__attribute__((aligned(4096))) uint64_t pdpt[512] = {0, };
+static uint64_t pml4[NUM_PML4_ENTRIES] __attribute__((aligned(4096)));
+static uint64_t pdpt[NUM_PDPT_ENTRIES] __attribute__((aligned(4096)));
 
-static inline void zero_memset(void *ptr, size_t size) {
+static inline void clear_qwords(void *ptr, size_t size)
+{
     uint64_t *p = (uint64_t *)ptr;
     for (size_t i = 0; i < size / sizeof(uint64_t); i++) {
         p[i] = 0;
@@ -14,28 +15,25 @@ static inline void zero_memset(void *ptr, size_t size) {
 
 void identity_paging_16GB(void)
 {
-    zero_memset(pml4, sizeof(pml4));
-    zero_memset(pdpt, sizeof(pdpt));
+    clear_qwords(pml4, sizeof(pml4));
+    clear_qwords(pdpt, sizeof(pdpt));
 
-    // PML4[0] → PDPT
+    /* PML4[0] -> PDPT */
     pml4[0] = (uint64_t)pdpt
             | PAGE_PRESENT
-            | PAGE_RW;
+            | PAGE_RW
+            | PAGE_USER;
 
     for (int i = 0; i < 16; i++) {
-        // 1GB 단위 물리/선형 주소
-        uint64_t addr = (uint64_t)i << 30; // 1GB = 1 << 30
-
-        // PDPTE: 1GB huge page
-        // - addr은 1GB 정렬이어야 함 (하위 30비트 0).[web:67]
-        // - PS 비트(보통 bit 7)를 PAGE_PS로 가정.
+        uint64_t addr = (uint64_t)i << 30; /* 1 GiB pages */
         pdpt[i] = addr
                 | PAGE_PRESENT
                 | PAGE_RW
-                | PAGE_PS;  // 1GB page
+                | PAGE_USER
+                | PAGE_PS;
     }
 
-    // 새 페이지 테이블 활성화
+    /* Enable new page table root */
     __asm__ volatile (
         "mov %0, %%cr3"
         :

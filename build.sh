@@ -19,3 +19,4 @@ cd ../..
 
 cp Build/OvmfX64/RELEASE_GCC5/X64/BOOTX64.efi EFIfile/BOOTX64.efi
 cp BlueStarOS/kernel/build/kernel EFIfile/kernel
+cp BlueStarOS/kernel/build/kernel.elf EFIfile/kernel.elf

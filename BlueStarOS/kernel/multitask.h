@@ -3,8 +3,7 @@
 
 #include <stdint.h>
 
-typedef struct
-{
+typedef struct {
     uint64_t r15;
     uint64_t r14;
     uint64_t r13;
@@ -22,16 +21,18 @@ typedef struct
     uint64_t rax;
 } saved_regs_t;
 
-
-typedef struct
-{
-    uint8_t *stack_mem;
-    uint64_t rsp; // pointer to saved_regs area (when task not running)
+typedef struct {
+    uint8_t *user_stack_mem;
+    uint8_t *kernel_stack_mem;
+    uint64_t kernel_stack_top;
+    uint64_t rsp;
     int id;
 } task_t;
 
 __attribute__((naked)) void irq0_task_switch(void);
 __attribute__((used)) uint64_t scheduler(void *old_saved_area);
+
 void task_add(void (*entry)(void), int id, int cs, int ds);
+void multitask_start(void);
 
 #endif
