@@ -12,7 +12,7 @@
 #define NUM_PML4_ENTRIES 512
 #define NUM_PDPT_ENTRIES 512
 
-/* Build identity mapping for the low 16 GiB using 1 GiB pages */
-void identity_paging_16GB(void);
+/* Build identity mapping for the low 128 GiB using 1 GiB pages */
+void identity_paging_128GB(void);
 
 #endif

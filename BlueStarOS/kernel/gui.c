@@ -6,12 +6,15 @@
 
 static uint32_t *fb;
 static uint32_t *double_fb;
+static uint32_t *render_fb;
 static uint32_t width;
 static uint32_t height;
 static uint32_t fb_pitch_pixels;
+static uint32_t render_pitch_pixels;
 static uint8_t red_shift;
 static uint8_t green_shift;
 static uint8_t blue_shift;
+static int use_direct_fb;
 static int dirty_valid;
 static uint32_t dirty_x0;
 static uint32_t dirty_y0;
@@ -69,6 +72,14 @@ static inline void mark_dirty_rect(int x0, int y0, int x1, int y1)
     if ((uint32_t)y0 < dirty_y0) dirty_y0 = (uint32_t)y0;
     if ((uint32_t)x1 > dirty_x1) dirty_x1 = (uint32_t)x1;
     if ((uint32_t)y1 > dirty_y1) dirty_y1 = (uint32_t)y1;
+}
+
+static inline void mark_dirty(int x0, int y0, int x1, int y1)
+{
+    if (use_direct_fb) {
+        return;
+    }
+    mark_dirty_rect(x0, y0, x1, y1);
 }
 
 static inline void copy_pixels_sse(uint32_t *dst, const uint32_t *src, uint32_t count)
@@ -129,23 +140,35 @@ void init_gui(boot_info_t *bootinfo)
     }
 
     double_fb = malloc((size_t)(pixel_count * sizeof(uint32_t)));
-    if (double_fb == NULL) {
-        halt_forever();
+    if (double_fb != NULL) {
+        for (uint64_t i = 0; i < pixel_count; i++) {
+            double_fb[i] = 0;
+        }
+
+        render_fb = double_fb;
+        render_pitch_pixels = width;
+        use_direct_fb = 0;
+        dirty_valid = 1;
+        dirty_x0 = 0;
+        dirty_y0 = 0;
+        dirty_x1 = width;
+        dirty_y1 = height;
+        return;
     }
 
-    for (uint64_t i = 0; i < pixel_count; i++) {
-        double_fb[i] = 0;
-    }
-
-    dirty_valid = 1;
-    dirty_x0 = 0;
-    dirty_y0 = 0;
-    dirty_x1 = width;
-    dirty_y1 = height;
+    /* Fallback for low-memory systems: render directly into the GOP framebuffer. */
+    render_fb = fb;
+    render_pitch_pixels = fb_pitch_pixels;
+    use_direct_fb = 1;
+    dirty_valid = 0;
 }
 
 void gui_update(void)
 {
+    if (use_direct_fb) {
+        return;
+    }
+
     if (!dirty_valid) {
         return;
     }
@@ -157,14 +180,14 @@ void gui_update(void)
     dirty_valid = 0;
 
     uint32_t span = x1 - x0;
-    uint32_t *src_row = &double_fb[(uint64_t)y0 * (uint64_t)width + (uint64_t)x0];
+    uint32_t *src_row = &render_fb[(uint64_t)y0 * (uint64_t)render_pitch_pixels + (uint64_t)x0];
     uint32_t *dst_row = &fb[(uint64_t)y0 * (uint64_t)fb_pitch_pixels + (uint64_t)x0];
 
     uint32_t rows = y1 - y0;
     for (uint32_t row = 0; row < rows; row++)
     {
         copy_pixels_sse(dst_row, src_row, span);
-        src_row += width;
+        src_row += render_pitch_pixels;
         dst_row += fb_pitch_pixels;
     }
 }
@@ -178,7 +201,7 @@ void draw_pixel_alpha(
     if (y >= height)
         return;
 
-    uint32_t *loc = &(double_fb[(uint64_t)y * (uint64_t)width + (uint64_t)x]);
+    uint32_t *loc = &(render_fb[(uint64_t)y * (uint64_t)render_pitch_pixels + (uint64_t)x]);
 
     uint32_t dst = *loc;
 
@@ -194,7 +217,7 @@ void draw_pixel_alpha(
 
     *loc = make_pixel(out_r, out_g, out_b);
 
-    mark_dirty_rect((int)x, (int)y, (int)x + 1, (int)y + 1);
+    mark_dirty((int)x, (int)y, (int)x + 1, (int)y + 1);
 }
 
 void draw_pixel(
@@ -206,11 +229,11 @@ void draw_pixel(
     if (y >= height)
         return;
 
-    uint32_t *loc = &(double_fb[(uint64_t)y * (uint64_t)width + (uint64_t)x]);
+    uint32_t *loc = &(render_fb[(uint64_t)y * (uint64_t)render_pitch_pixels + (uint64_t)x]);
 
     *loc = make_pixel(red, green, blue);
 
-    mark_dirty_rect((int)x, (int)y, (int)x + 1, (int)y + 1);
+    mark_dirty((int)x, (int)y, (int)x + 1, (int)y + 1);
 }
 
 void draw_rectangle(int x, int y, int rect_width, int rect_height, uint8_t red, uint8_t green, uint8_t blue)
@@ -232,7 +255,7 @@ void draw_rectangle(int x, int y, int rect_width, int rect_height, uint8_t red, 
     uint32_t color = make_pixel(red, green, blue);
     __m128i color128 = _mm_set1_epi32((int)color);
 
-    uint32_t *row = &double_fb[(uint64_t)y0 * (uint64_t)width + (uint64_t)x0];
+    uint32_t *row = &render_fb[(uint64_t)y0 * (uint64_t)render_pitch_pixels + (uint64_t)x0];
     for (int j = 0; j < clipped_height; j++)
     {
         int i = 0;
@@ -255,10 +278,10 @@ void draw_rectangle(int x, int y, int rect_width, int rect_height, uint8_t red, 
             row[i] = color;
         }
 
-        row += width;
+        row += render_pitch_pixels;
     }
 
-    mark_dirty_rect(x0, y0, x1, y1);
+    mark_dirty(x0, y0, x1, y1);
 }
 
 void draw_rectangle_alpha(int x, int y, int rect_width, int rect_height, uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha)
@@ -283,7 +306,7 @@ void draw_rectangle_alpha(int x, int y, int rect_width, int rect_height, uint8_t
 
     int clipped_width = x1 - x0;
     int clipped_height = y1 - y0;
-    uint32_t *row = &double_fb[(uint64_t)y0 * (uint64_t)width + (uint64_t)x0];
+    uint32_t *row = &render_fb[(uint64_t)y0 * (uint64_t)render_pitch_pixels + (uint64_t)x0];
 
     for (int j = 0; j < clipped_height; j++)
     {
@@ -299,10 +322,10 @@ void draw_rectangle_alpha(int x, int y, int rect_width, int rect_height, uint8_t
             uint32_t out_b = ((src_b * a) + (dst_b * inv_a)) >> 8;
             row[i] = (out_r << red_shift) | (out_g << green_shift) | (out_b << blue_shift);
         }
-        row += width;
+        row += render_pitch_pixels;
     }
 
-    mark_dirty_rect(x0, y0, x1, y1);
+    mark_dirty(x0, y0, x1, y1);
 }
 
 uint32_t gui_width(void)

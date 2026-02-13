@@ -13,7 +13,7 @@ static inline void clear_qwords(void *ptr, size_t size)
     }
 }
 
-void identity_paging_16GB(void)
+void identity_paging_128GB(void)
 {
     clear_qwords(pml4, sizeof(pml4));
     clear_qwords(pdpt, sizeof(pdpt));
@@ -24,7 +24,7 @@ void identity_paging_16GB(void)
             | PAGE_RW
             | PAGE_USER;
 
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 128; i++) {
         uint64_t addr = (uint64_t)i << 30; /* 1 GiB pages */
         pdpt[i] = addr
                 | PAGE_PRESENT
