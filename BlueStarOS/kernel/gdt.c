@@ -23,11 +23,11 @@ static uint64_t gdt_table[7] = {
 
     // Ring 0
     0x00AF9A000000FFFFULL, // 0x08: kernel code (CS)
-    0x00CF92000000FFFFULL, // 0x10: kernel data (DS/ES/SS)
+    0x008F92000000FFFFULL, // 0x10: kernel data (DS/ES/SS)
 
     // Ring 3
     0x00AFFA000000FFFFULL, // 0x18: user code
-    0x00CFF2000000FFFFULL, // 0x20: user data
+    0x008FF2000000FFFFULL, // 0x20: user data
 
     // 64-bit TSS descriptor (low/high qword filled at runtime)
     0x0000000000000000ULL, // 0x28

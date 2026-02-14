@@ -21,6 +21,7 @@ typedef struct {
     uint32_t framebuffer_format;
     uint64_t heap_base;
     uint64_t heap_size;
+    uint64_t fat_partition_lba;
 } boot_info_t;
 
 #endif
